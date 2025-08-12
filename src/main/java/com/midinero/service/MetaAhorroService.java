@@ -109,29 +109,36 @@ public class MetaAhorroService {
     public ApiResponse<MetaAhorroDTO> actualizarMeta(Long id, MetaAhorroDTO metaDTO) {
         try {
             Usuario usuario = obtenerUsuarioAutenticado();
-            
             MetaAhorro meta = metaAhorroRepository.findById(id)
                 .orElse(null);
-
             if (meta == null || !meta.getUsuario().getId().equals(usuario.getId())) {
                 return ApiResponse.error("Meta no encontrada");
             }
 
+            // Solo permite editar si la meta está activa
+            if (meta.getEstado() != MetaAhorro.EstadoMeta.ACTIVA) {
+                return ApiResponse.error("Solo puedes editar metas activas");
+            }
+
             meta.setNombre(metaDTO.getNombre());
-            meta.setMontoObjetivo(metaDTO.getMontoObjetivo());
-            meta.setMontoActual(metaDTO.getMontoActual());
             meta.setFechaInicio(metaDTO.getFechaInicio());
             meta.setFechaFin(metaDTO.getFechaFin());
 
-            // Verificar si se completó la meta
-            if (meta.getMontoActual() >= meta.getMontoObjetivo() && meta.getEstado() != MetaAhorro.EstadoMeta.COMPLETADA) {
+            Double nuevoObjetivo = metaDTO.getMontoObjetivo();
+            Double abonado = meta.getMontoActual() != null ? meta.getMontoActual() : 0.0;
+
+            // Si el nuevo objetivo es menor al abonado, marca como completada
+            if (nuevoObjetivo <= abonado) {
+                meta.setMontoObjetivo(nuevoObjetivo);
                 meta.setEstado(MetaAhorro.EstadoMeta.COMPLETADA);
                 notificacionService.enviarNotificacionMetaCompletada(usuario.getId(), meta.getNombre());
+            } else {
+                meta.setMontoObjetivo(nuevoObjetivo);
+                // El dinero abonado se mantiene, solo cambia el objetivo
             }
 
             MetaAhorro metaActualizada = metaAhorroRepository.save(meta);
             MetaAhorroDTO responseDTO = convertirAMetaAhorroDTO(metaActualizada);
-
             return ApiResponse.success("Meta actualizada exitosamente", responseDTO);
         } catch (Exception e) {
             return ApiResponse.error("Error al actualizar la meta");
